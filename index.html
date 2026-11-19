@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Isua 3D Viewer</title>
+  <meta name="description" content="CesiumJS viewer for the UAV photogrammetry 3D models of the NW Isua Supracrustal Belt (3D Tiles / .3tz).">
+  <!-- CesiumJS, pinned. Loaded from vendor/cesium/ when `python -m isuaphoto viewer-offline` has installed
+       a matching copy (works without internet), otherwise from cdn.jsdelivr.net. Both are checked
+       against the same Subresource Integrity hashes. To upgrade: change the version in CDN and the
+       hashes in SRI (see viewer/README.md), then re-run viewer-offline. No Cesium ion token is used. -->
+  <script>
+    (function () {
+      var CDN = 'https://cdn.jsdelivr.net/npm/cesium@1.146.0/Build/Cesium/';
+      var SRI = {
+        'Cesium.js': 'sha384-1lWK5deN/B+lLaUw4lk6xKp/L19ii/98SZLk6K8YthDskgvc+GbdixLzbCnSS2Wn',
+        'Widgets/widgets.css': 'sha384-ghEeMdcWWzRv/BPeUcX835vcKDGrxvROXisl/Btpv3GeekBUXTSPVcFJpI1Tcrgp'
+      };
+      var version = /cesium@([\d.]+)\//.exec(CDN)[1];
+      var base = CDN, source = 'cdn';
+      if (location.protocol === 'http:' || location.protocol === 'https:') {
+        try { // tiny synchronous check, so Cesium.js can still load as an ordinary blocking script
+          var x = new XMLHttpRequest();
+          x.open('GET', 'vendor/cesium/VERSION', false);
+          x.send();
+          if (x.status === 200 && x.responseText.trim() === version) { base = 'vendor/cesium/'; source = 'local'; }
+        } catch (e) { /* no offline copy */ }
+      }
+      window.CESIUM_BASE_URL = base;
+      window.ISUA_CESIUM = { version: version, source: source, base: base };
+      document.write('<link rel="stylesheet" href="' + base + 'Widgets/widgets.css" integrity="' +
+        SRI['Widgets/widgets.css'] + '" crossorigin="anonymous">');
+      document.write('<script src="' + base + 'Cesium.js" integrity="' + SRI['Cesium.js'] +
+        '" crossorigin="anonymous"><\/script>');
+    })();
+  </script>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+<div id="app">
+  <aside id="panel" aria-label="Controls">
+    <header class="panel-head">
+      <h1>Isua 3D Viewer</h1>
+      <button id="btn-panel" class="icon" title="Hide / show panel" aria-expanded="true">⟨</button>
+    </header>
+    <div id="messages" role="status" aria-live="polite"></div>
+
+    <div class="panel-body">
+      <details open id="sec-open">
+        <summary>Open data</summary>
+        <div class="row">
+          <label class="btn" id="lbl-3tz">.3tz file…<input type="file" id="in-3tz" accept=".3tz,.zip" multiple hidden></label>
+          <button id="btn-folder" type="button">Tileset folder…</button>
+          <input type="file" id="in-folder" webkitdirectory multiple hidden>
+        </div>
+        <form id="form-url" class="row">
+          <input id="in-url" type="url" placeholder="https://…/model.3tz or …/tileset.json" aria-label="Remote URL" required>
+          <button type="submit">Load URL</button>
+        </form>
+        <div class="row">
+          <label class="btn">GeoJSON overlay…<input type="file" id="in-geojson" accept=".geojson,.json,application/geo+json" multiple hidden></label>
+          <label class="check"><input type="checkbox" id="chk-clamp" checked> clamp 2D points to model</label>
+        </div>
+        <p class="hint">Or drag &amp; drop <b>.3tz</b> files, unpacked tileset folders or <b>.geojson</b> files onto the map. Local files never leave this computer.</p>
+      </details>
+
+      <details open id="sec-layers">
+        <summary>Layers</summary>
+        <ul id="layer-list" class="layers"><li class="empty">Nothing loaded yet.</li></ul>
+      </details>
+
+      <details id="sec-nav">
+        <summary>Navigation</summary>
+        <div class="row">
+          <label for="sel-mouse">Mouse</label>
+          <select id="sel-mouse" aria-label="Mouse layout"></select>
+        </div>
+        <div class="row">
+          <label for="in-speed">Key speed</label>
+          <input id="in-speed" type="range" min="-3" max="3" step="1" value="0" aria-label="Keyboard movement speed">
+          <output id="out-speed" for="in-speed">1×</output>
+        </div>
+        <label class="check"><input type="checkbox" id="chk-pad" checked> On-screen navigation buttons</label>
+        <table id="nav-help" class="kv nav-help"></table>
+        <p class="hint">Movement speed adapts to how far away the surface in the middle of the screen is, so the
+          same keys work for a hand-sample close-up and for the whole survey area. You cannot fly into a model.</p>
+      </details>
+
+      <details open id="sec-tools">
+        <summary>Tools</summary>
+        <div class="seg" role="radiogroup" aria-label="Tool">
+          <label><input type="radio" name="tool" value="inspect" checked> Inspect</label>
+          <label><input type="radio" name="tool" value="distance"> Distance</label>
+          <label><input type="radio" name="tool" value="plane"> Strike/dip</label>
+        </div>
+        <p id="tool-help" class="hint"></p>
+        <div id="plane-box" hidden>
+          <div id="plane-live" class="result">Pick at least 3 points on the outcrop surface.</div>
+          <div class="row">
+            <input id="in-label" type="text" placeholder="label, e.g. S0 bedding" aria-label="Label">
+            <button id="btn-plane-save" type="button" disabled>Save plane</button>
+            <button id="btn-plane-undo" type="button">Undo</button>
+            <button id="btn-plane-clear" type="button">Clear</button>
+          </div>
+        </div>
+        <h3>Picked point</h3>
+        <table id="readout" class="kv"><tr><td colspan="2" class="empty">Click on a model.</td></tr></table>
+        <div class="row"><button id="btn-save-point" type="button" disabled>Save point</button></div>
+      </details>
+
+      <details open id="sec-meas">
+        <summary>Measurements <span id="meas-count" class="badge">0</span></summary>
+        <table id="meas-table" class="meas"><tbody></tbody></table>
+        <div class="row">
+          <button id="btn-csv" type="button">Export CSV</button>
+          <button id="btn-geojson" type="button">Export GeoJSON</button>
+          <button id="btn-meas-clear" type="button" class="danger">Clear all</button>
+        </div>
+        <p class="hint">Azimuths from true north; heights WGS84 ellipsoidal, as displayed (incl. any vertical offset). Kept in this browser until cleared.</p>
+      </details>
+
+      <details id="sec-view">
+        <summary>Map &amp; figure</summary>
+        <label class="check"><input type="checkbox" id="chk-osm" checked> OpenStreetMap base layer</label>
+        <label class="check"><input type="checkbox" id="chk-globe" checked> Show globe (ellipsoid)</label>
+        <div class="row">
+          <button id="btn-shot" type="button">Screenshot (PNG)</button>
+          <select id="sel-scale" aria-label="Screenshot resolution">
+            <option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option>
+          </select>
+        </div>
+        <div class="row"><button id="btn-link" type="button">Copy link to this view</button></div>
+        <p class="hint">The link contains the camera and remote URLs only; local files cannot be shared by link.</p>
+      </details>
+
+      <details id="sec-diag">
+        <summary>Remote link diagnostics</summary>
+        <p class="hint">Paste a link to a .3tz or tileset.json (e.g. an ERDA share link) to check whether it can be streamed from this viewer.</p>
+        <form id="form-diag" class="row">
+          <input id="in-diag" type="url" placeholder="https://…" aria-label="URL to diagnose" required>
+          <button type="submit">Check</button>
+        </form>
+        <div id="diag-out"></div>
+      </details>
+
+      <details id="sec-about">
+        <summary>About &amp; browser support</summary>
+        <ul id="caps" class="caps"></ul>
+        <p class="hint">Data: NW Isua Supracrustal Belt UAV photogrammetry, CC BY 4.0. Viewer built on CesiumJS (Apache 2.0). Map data © OpenStreetMap contributors.</p>
+      </details>
+    </div>
+  </aside>
+  <main id="cesium" aria-label="3D map"></main>
+  <div id="drop-overlay" hidden>Drop .3tz files, tileset folders or GeoJSON</div>
+</div>
+<noscript><p class="msg error">This viewer needs JavaScript.</p></noscript>
+<script>
+  // Classic script on purpose: it still runs when the ES modules cannot load (e.g. a file:// page).
+  (function () {
+    function show(text) {
+      var d = document.createElement('div');
+      d.className = 'msg error';
+      d.textContent = text;
+      document.getElementById('messages').prepend(d);
+    }
+    if (location.protocol === 'file:') {
+      show('This page was opened directly from disk (file://), where browsers block the viewer\'s scripts. ' +
+           'Start it with:  python -m isuaphoto viewer  (or use the GitHub Pages address).');
+      return;
+    }
+    setTimeout(function () {
+      if (!window.isua) show('The viewer did not start. Check the internet connection (CesiumJS is loaded from cdn.jsdelivr.net) and reload.');
+    }, 20000);
+  })();
+</script>
+</body>
+</html>

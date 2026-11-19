@@ -134,6 +134,19 @@
         <p class="hint">The link contains the camera and remote URLs only; local files cannot be shared by link.</p>
       </details>
 
+      <details id="sec-perf">
+        <summary>Performance</summary>
+        <label for="sel-detail">Detail</label>
+        <select id="sel-detail" aria-label="Detail level">
+          <option value="8">High (sharpest, slowest)</option>
+          <option value="16" selected>Normal</option>
+          <option value="32">Fast (for slower computers)</option>
+        </select>
+        <label class="check"><input type="checkbox" id="chk-moving" checked> Coarser while moving (smoother motion; full detail returns when you stop)</label>
+        <label class="check"><input type="checkbox" id="chk-fps"> Show frames per second</label>
+        <p class="hint">If movement stutters, try "Fast". If it is still slow, check that the browser uses the graphics card (Edge: edge://gpu, Chrome: chrome://gpu, "Hardware accelerated"). Settings are remembered in this browser.</p>
+      </details>
+
       <details id="sec-diag">
         <summary>Remote link diagnostics</summary>
         <p class="hint">Paste a link to a .3tz or tileset.json (e.g. an ERDA share link) to check whether it can be streamed from this viewer.</p>

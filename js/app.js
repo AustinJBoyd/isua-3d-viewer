@@ -89,12 +89,35 @@ const nextId = () => ++seq;
 // Exposed for the end-to-end test and for power users in the browser console.
 window.isua = { viewer, state, Cesium, openUrl: (u, o) => openUrl(u, o), addMeasurementPoints: (t, pts) => commitMeasurement(t, pts) };
 
+// ------------------------------------------------------------------ performance
+// Detail = Cesium's maximumScreenSpaceError (pixels of geometric error allowed on screen): 8 high, 16 normal
+// (Cesium's default), 32 fast. While the camera moves, the error may be doubled ("coarser while moving"), so fewer
+// and lighter tiles are drawn during motion; full detail is restored when the camera stops.
+const perf = { sse: 16, coarserWhileMoving: true, moving: false };
+try {
+  const saved = JSON.parse(localStorage.getItem('isua-perf') || '{}');
+  if ([8, 16, 32].includes(saved.sse)) perf.sse = saved.sse;
+  if (typeof saved.coarserWhileMoving === 'boolean') perf.coarserWhileMoving = saved.coarserWhileMoving;
+} catch (e) { /* storage unavailable: defaults */ }
+function currentSse() { return perf.moving && perf.coarserWhileMoving ? perf.sse * 2 : perf.sse; }
+function applySse() {
+  const v = currentSse();
+  for (const t of state.tilesets) t.tileset.maximumScreenSpaceError = v;
+  scene.requestRender();
+}
+function savePerf() {
+  try { localStorage.setItem('isua-perf', JSON.stringify({ sse: perf.sse, coarserWhileMoving: perf.coarserWhileMoving })); } catch (e) { /* ignore */ }
+}
+viewer.camera.moveStart.addEventListener(() => { perf.moving = true; if (perf.coarserWhileMoving) applySse(); });
+viewer.camera.moveEnd.addEventListener(() => { perf.moving = false; applySse(); });
+window.isua.perf = perf;
+
 // ------------------------------------------------------------------ tilesets
 async function addTileset({ name, url, kind, shareUrl = null, offset = 0, sourceId = null, source = null, fly = true, detail = '' }) {
   let tileset;
   try {
     // enableCollision: the camera cannot pass through the model (mouse navigation).
-    tileset = await Cesium.Cesium3DTileset.fromUrl(url, { maximumScreenSpaceError: 16, enableCollision: true });
+    tileset = await Cesium.Cesium3DTileset.fromUrl(url, { maximumScreenSpaceError: currentSse(), enableCollision: true });
   } catch (e) {
     if (sourceId) unregisterSource(sourceId);
     throw new Error(`Could not load the tileset of "${name}": ${e.message || e}`);
@@ -746,6 +769,11 @@ function wire() {
     saveMeasurements(); redrawMeasurements(); renderMeasurements();
   });
   $('#chk-osm').addEventListener('change', (e) => { osmLayer.show = e.target.checked; updateHash(); });
+  $('#sel-detail').value = String(perf.sse);
+  $('#chk-moving').checked = perf.coarserWhileMoving;
+  $('#sel-detail').addEventListener('change', (e) => { perf.sse = Number(e.target.value); applySse(); savePerf(); });
+  $('#chk-moving').addEventListener('change', (e) => { perf.coarserWhileMoving = e.target.checked; applySse(); savePerf(); });
+  $('#chk-fps').addEventListener('change', (e) => { scene.debugShowFramesPerSecond = e.target.checked; });
   $('#chk-globe').addEventListener('change', (e) => { scene.globe.show = e.target.checked; updateHash(); });
   $('#btn-shot').addEventListener('click', () => screenshot(Number($('#sel-scale').value)));
   $('#btn-link').addEventListener('click', () => {

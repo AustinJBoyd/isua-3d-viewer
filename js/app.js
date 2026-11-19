@@ -67,10 +67,36 @@ viewer.cesiumWidget.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpace
 const osmLayer = viewer.imageryLayers.addImageryProvider(new Cesium.OpenStreetMapImageryProvider({ url: 'https://tile.openstreetmap.org/' }));
 viewer.homeButton.viewModel.command.beforeExecute.addEventListener((e) => { e.cancel = true; flyHome(); });
 
+/**
+ * The part of a tileset that actually holds the model. Metashape writes the root bounding volume as a loose cube
+ * (for Overview North 3.6 km wide, centred 1.7 km above the ground), so flying to tileset.boundingSphere often
+ * leaves the model small, off-centre or out of view. Tiles also carry a tight content bounding volume: use those
+ * (root first, else its children, up to 3 levels), and fall back to the tile's own volume.
+ */
+function focusSphere(tileset) {
+  const spheres = [];
+  (function walk(t, depth) {
+    if (!t) return;
+    const cbv = t._contentBoundingVolume; // set only when the tile header has its own content.boundingVolume
+    if (cbv && cbv.boundingSphere) { spheres.push(cbv.boundingSphere); return; }
+    if (depth >= 3 || !t.children || !t.children.length) { spheres.push(t.boundingSphere); return; }
+    t.children.forEach((c) => walk(c, depth + 1));
+  })(tileset.root, 0);
+  return spheres.length ? Cesium.BoundingSphere.fromBoundingSpheres(spheres) : tileset.boundingSphere;
+}
+
+/** Look at a model from the south, 45° down, with all of it in view. */
+function flyToSphere(sphere, duration = 1.5) {
+  return new Promise((resolve) => viewer.camera.flyToBoundingSphere(sphere, {
+    offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-45), sphere.radius * 2.2),
+    duration, complete: resolve, cancel: resolve,
+  }));
+}
+
 function flyHome() {
   const visible = state.tilesets.filter((t) => t.tileset.show);
   if (visible.length) {
-    viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromBoundingSpheres(visible.map((t) => t.tileset.boundingSphere)), { duration: 1.2 });
+    flyToSphere(Cesium.BoundingSphere.fromBoundingSpheres(visible.map((t) => focusSphere(t.tileset))), 1.2);
   } else viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(ISUA.lon, ISUA.lat, 25000), duration: 1.2 });
 }
 
@@ -141,7 +167,7 @@ async function addTileset({ name, url, kind, shareUrl = null, offset = 0, source
     entry.detail = `${detail ? `${detail} · ` : ''}centre ${g.lat.toFixed(5)}°, ${g.lon.toFixed(5)}°, h ${g.h.toFixed(1)} m`;
   }
   renderLayers();
-  if (fly) await viewer.flyTo(tileset, { duration: 1.5 });
+  if (fly) await flyToSphere(focusSphere(tileset), 1.5);
   updateHash();
   scheduleClamp();
   notify(`Loaded "${name}" (${kind}).`, 'ok', { timeout: 4000 });
@@ -349,7 +375,7 @@ function renderLayers() {
     const vis = el('input', { type: 'checkbox', title: 'Show / hide', checked: t.tileset.show, onchange: (e) => { t.tileset.show = e.target.checked; if (!t.tileset.show) t.tileset.trimLoadedTiles(); scene.requestRender(); } });
     ul.append(el('li', { class: 'layer', 'data-layer': t.id },
       el('div', { class: 'title' }, vis, el('span', { class: 'name' }, t.name),
-        el('button', { type: 'button', title: 'Fly to', onclick: () => viewer.flyTo(t.tileset, { duration: 1.2 }) }, 'Fly to'),
+        el('button', { type: 'button', title: 'Fly to', onclick: () => flyToSphere(focusSphere(t.tileset), 1.2) }, 'Fly to'),
         el('button', { type: 'button', title: 'Remove', class: 'danger', onclick: () => removeTileset(t) }, '×')),
       el('div', { class: 'meta' }, `${t.kind}${t.detail ? ` · ${t.detail}` : ''}`),
       el('div', { class: 'meta stats' }, layerStats(t)),

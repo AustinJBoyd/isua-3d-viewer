@@ -256,8 +256,11 @@ async function addGeoJson(obj, name) {
     const key = LABEL_KEYS.find((k) => props[k] !== undefined && props[k] !== null);
     e.billboard = undefined;
     if (clamp && is2d) toClamp.push({ entity: e, lon: carto.longitude, lat: carto.latitude });
+    // A feature's own "marker-color" (simplestyle, e.g. colour by lithology) wins over the default yellow.
+    let color = Cesium.Color.YELLOW;
+    try { if (props['marker-color']) color = Cesium.Color.fromCssColorString(String(props['marker-color'])) || color; } catch (err) { /* keep yellow */ }
     e.point = new Cesium.PointGraphics({
-      pixelSize: 10, color: Cesium.Color.YELLOW, outlineColor: Cesium.Color.BLACK, outlineWidth: 2,
+      pixelSize: 10, color, outlineColor: Cesium.Color.BLACK, outlineWidth: 2,
       disableDepthTestDistance: Number.POSITIVE_INFINITY,
     });
     if (key) {
@@ -265,6 +268,8 @@ async function addGeoJson(obj, name) {
         text: String(props[key]), font: '13px sans-serif', fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK,
         outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -16),
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        // names only within 500 m of the camera, so hundreds of points do not bury the model in text
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 500),
       });
     }
   }

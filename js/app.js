@@ -143,7 +143,12 @@ async function addTileset({ name, url, kind, shareUrl = null, offset = 0, source
   let tileset;
   try {
     // enableCollision: the camera cannot pass through the model (mouse navigation).
-    tileset = await Cesium.Cesium3DTileset.fromUrl(url, { maximumScreenSpaceError: currentSse(), enableCollision: true });
+    // environmentMapOptions.enabled = false: the photogrammetry tiles are unlit textures, so Cesium's dynamic
+    // environment map (image-based lighting) adds nothing. It costs GPU time every frame, and in Firefox it can stop
+    // rendering with "InternalError: too much recursion" (seen with a model streamed from ERDA, 19 Nov 2026).
+    tileset = await Cesium.Cesium3DTileset.fromUrl(url, {
+      maximumScreenSpaceError: currentSse(), enableCollision: true, environmentMapOptions: { enabled: false },
+    });
   } catch (e) {
     if (sourceId) unregisterSource(sourceId);
     throw new Error(`Could not load the tileset of "${name}": ${e.message || e}`);
@@ -714,7 +719,16 @@ async function openDroppedFile(file) {
   else if (n.endsWith('.geojson')) await openGeoJsonFile(file);
   else if (n === 'tileset.json') notify('Drop the whole tileset folder, not just tileset.json (the tiles are in the folder next to it).', 'warn');
   else if (n.endsWith('.json')) await openGeoJsonFile(file);
+  else if (await isZip(file)) await openLocal3tz(file); // e.g. a .3tz downloaded from an ERDA share link without its name
   else notify(`${file.name}: unsupported file type (expected .3tz, a tileset folder, or .geojson).`, 'warn');
+}
+
+/** True if the file starts with a ZIP signature ("PK\x03\x04"), as every .3tz does. */
+async function isZip(file) {
+  try {
+    const b = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+    return b[0] === 0x50 && b[1] === 0x4b && b[2] === 0x03 && b[3] === 0x04;
+  } catch (e) { return false; }
 }
 
 // ------------------------------------------------------------------ wiring

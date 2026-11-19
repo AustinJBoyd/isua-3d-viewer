@@ -26,7 +26,7 @@ export async function diagnoseUrl(rawUrl, opts = {}) {
   const report = { url: rawUrl, checks, kind: 'unknown', modes: { tilesetJson: false, archive3tz: false }, askHost: [], summary: '' };
 
   let url;
-  try { url = new URL(rawUrl); } catch {
+  try { url = new URL(rawUrl, typeof location !== 'undefined' ? location.href : undefined); } catch {
     add('url', FAIL, 'URL', 'This is not a valid web address. It must start with https:// (or http://).');
     report.summary = 'Invalid URL.';
     return report;

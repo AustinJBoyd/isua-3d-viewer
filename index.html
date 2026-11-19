@@ -55,7 +55,7 @@
           <input type="file" id="in-folder" webkitdirectory multiple hidden>
         </div>
         <form id="form-url" class="row">
-          <input id="in-url" type="url" placeholder="https://…/model.3tz or …/tileset.json" aria-label="Remote URL" required>
+          <input id="in-url" type="text" inputmode="url" spellcheck="false" placeholder="https://…/model.3tz, …/tileset.json, or a file name next to this page" aria-label="Remote URL" required>
           <button type="submit">Load URL</button>
         </form>
         <div class="row">
@@ -153,7 +153,7 @@
         <summary>Remote link diagnostics</summary>
         <p class="hint">Paste a link to a .3tz or tileset.json (e.g. an ERDA share link) to check whether it can be streamed from this viewer.</p>
         <form id="form-diag" class="row">
-          <input id="in-diag" type="url" placeholder="https://…" aria-label="URL to diagnose" required>
+          <input id="in-diag" type="text" inputmode="url" spellcheck="false" placeholder="https://… or a file name next to this page" aria-label="URL to diagnose" required>
           <button type="submit">Check</button>
         </form>
         <div id="diag-out"></div>

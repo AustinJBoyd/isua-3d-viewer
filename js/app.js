@@ -346,7 +346,7 @@ function renderLayers() {
     const apply = (v) => { setOffset(t, v); out.textContent = fmtOffset(t.offset); updateHash(); };
     range.addEventListener('input', () => { num.value = range.value; apply(range.value); });
     num.addEventListener('change', () => { range.value = num.value; apply(num.value); });
-    const vis = el('input', { type: 'checkbox', title: 'Show / hide', checked: t.tileset.show, onchange: (e) => { t.tileset.show = e.target.checked; } });
+    const vis = el('input', { type: 'checkbox', title: 'Show / hide', checked: t.tileset.show, onchange: (e) => { t.tileset.show = e.target.checked; if (!t.tileset.show) t.tileset.trimLoadedTiles(); scene.requestRender(); } });
     ul.append(el('li', { class: 'layer', 'data-layer': t.id },
       el('div', { class: 'title' }, vis, el('span', { class: 'name' }, t.name),
         el('button', { type: 'button', title: 'Fly to', onclick: () => viewer.flyTo(t.tileset, { duration: 1.2 }) }, 'Fly to'),
@@ -779,6 +779,15 @@ function wire() {
   $('#sel-detail').addEventListener('change', (e) => { perf.sse = Number(e.target.value); applySse(); savePerf(); });
   $('#chk-moving').addEventListener('change', (e) => { perf.coarserWhileMoving = e.target.checked; applySse(); savePerf(); });
   $('#chk-fps').addEventListener('change', (e) => { scene.debugShowFramesPerSecond = e.target.checked; });
+  // Memory held by the loaded models (graphics card), so a slow-down after loading several surveys can be seen.
+  setInterval(() => {
+    const out = $('#perf-mem');
+    if (!out || !$('#sec-perf').open) return;
+    const mb = (b) => Math.round(b / 1048576);
+    const parts = state.tilesets.map((t) => `${t.name.replace(/_Tiles_ITRF2020\.3tz$/, '')}: ${mb(t.tileset.totalMemoryUsageInBytes)} MB${t.tileset.show ? '' : ' (hidden)'}`);
+    const total = state.tilesets.reduce((a, t) => a + t.tileset.totalMemoryUsageInBytes, 0);
+    out.textContent = state.tilesets.length ? `Model memory ${mb(total)} MB (${parts.join(', ')})` : '';
+  }, 2000);
   $('#chk-globe').addEventListener('change', (e) => { scene.globe.show = e.target.checked; updateHash(); });
   $('#btn-shot').addEventListener('click', () => screenshot(Number($('#sel-scale').value)));
   $('#btn-link').addEventListener('click', () => {

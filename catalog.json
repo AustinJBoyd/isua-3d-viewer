@@ -1,0 +1,52 @@
+{
+  "about": "Models and overlays offered in the viewer's 'Add survey' menu. Links are relative to viewer/index.html and work when the viewer folder sits next to the deposit folder Isua2025_UAV_photogrammetry (as on ERDA). Elsewhere the menu stays hidden. Detailed North is deposited as three tiled models (part1-3); the viewer loads a merged copy of them from viewer_data/ (one tileset streams more smoothly).",
+  "surveys": [
+    {
+      "name": "Detailed Camp (15 July)",
+      "url": "../Isua2025_UAV_photogrammetry/01_Products/20250715_Detailed_Camp/Isua2025_20250715_Detailed_Camp_Tiles_ITRF2020.3tz"
+    },
+    {
+      "name": "Overview South (16 July)",
+      "url": "../Isua2025_UAV_photogrammetry/01_Products/20250716_Overview_South/Isua2025_20250716_Overview_South_Tiles_ITRF2020.3tz"
+    },
+    {
+      "name": "Intermediate SouthWest (17 July)",
+      "url": "../Isua2025_UAV_photogrammetry/01_Products/20250717_Intermediate_SouthWest/Isua2025_20250717_Intermediate_SouthWest_Tiles_ITRF2020.3tz"
+    },
+    {
+      "name": "Intermediate South (17 July)",
+      "url": "../Isua2025_UAV_photogrammetry/01_Products/20250717_Intermediate_South/Isua2025_20250717_Intermediate_South_Tiles_ITRF2020.3tz"
+    },
+    {
+      "name": "Overview North (18 July)",
+      "url": "../Isua2025_UAV_photogrammetry/01_Products/20250718_Overview_North/Isua2025_20250718_Overview_North_Tiles_ITRF2020.3tz"
+    },
+    {
+      "name": "Detailed North (19 July)",
+      "url": "../viewer_data/Isua2025_20250719_Detailed_North_Tiles_merged_ITRF2020.3tz"
+    },
+    {
+      "name": "Intermediate SouthEast (20 July)",
+      "url": "../Isua2025_UAV_photogrammetry/01_Products/20250720_Intermediate_SouthEast/Isua2025_20250720_Intermediate_SouthEast_Tiles_ITRF2020.3tz"
+    },
+    {
+      "name": "Detailed South (21 July)",
+      "url": "../Isua2025_UAV_photogrammetry/01_Products/20250721_Detailed_South/Isua2025_20250721_Detailed_South_Tiles_ITRF2020.3tz"
+    },
+    {
+      "name": "Star outcrop, close-range model (18 July)",
+      "url": "../Isua2025_UAV_photogrammetry/01_Products/20250718_CloseRange_StarOutcrop/Isua2025_20250718_CloseRange_StarOutcrop_Tiles_ITRF2020.3tz"
+    }
+  ],
+  "overlays": [
+    {
+      "name": "Rosing (1999) locality",
+      "url": "../Isua2025_UAV_photogrammetry/05_Field_observations/Isua2025_Localities_ITRF2020.geojson",
+      "autoload": true
+    },
+    {
+      "name": "Field observations (304 points)",
+      "url": "../Isua2025_UAV_photogrammetry/05_Field_observations/Isua2025_FieldObservations_ITRF2020.geojson"
+    }
+  ]
+}

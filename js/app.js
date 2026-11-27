@@ -9,6 +9,7 @@ import { evaluate, summary, toCsv, toGeoJson, centroidOf } from './measurements.
 import { parseHash, buildHash } from './urlstate.js';
 import { diagnoseUrl, hostRequestText, formatBytes } from './diagnostics.js';
 import { setupNavigation } from './navigation.js';
+import { parseCatalog, resolveLink, notLoaded } from './catalog.js';
 
 const $ = (sel) => document.querySelector(sel);
 const STORAGE_KEY = 'isua-viewer-measurements-v1';
@@ -138,6 +139,21 @@ viewer.camera.moveStart.addEventListener(() => { perf.moving = true; if (perf.co
 viewer.camera.moveEnd.addEventListener(() => { perf.moving = false; applySse(); });
 window.isua.perf = perf;
 
+// Tile cache: Cesium gives every tileset its own cache (512 MB by default, plus up to 512 MB overflow). With several
+// surveys open, or Detailed North as three tilesets, that adds up to gigabytes and the browser starts to stutter.
+// One shared budget is split between the visible tilesets instead (27 Nov 2026).
+const CACHE_TOTAL_MB = 1024, CACHE_MIN_MB = 128;
+function rebalanceCache() {
+  const vis = state.tilesets.filter((t) => t.tileset.show);
+  const share = Math.max(CACHE_MIN_MB, Math.floor(CACHE_TOTAL_MB / Math.max(1, vis.length))) * 1024 * 1024;
+  for (const t of state.tilesets) {
+    t.tileset.cacheBytes = t.tileset.show ? share : 0;
+    t.tileset.maximumCacheOverflowBytes = Math.floor(share / 2);
+  }
+  scene.requestRender();
+}
+window.isua.rebalanceCache = rebalanceCache;
+
 // ------------------------------------------------------------------ tilesets
 async function addTileset({ name, url, kind, shareUrl = null, offset = 0, sourceId = null, source = null, fly = true, detail = '' }) {
   let tileset;
@@ -164,6 +180,7 @@ async function addTileset({ name, url, kind, shareUrl = null, offset = 0, source
     if (entry.failed <= 3) notify(`${name}: a tile failed to load (${err.url?.split('/').pop()}): ${err.message}`, 'warn');
   });
   state.tilesets.push(entry);
+  rebalanceCache();
   setOffset(entry, offset);
   const g = ecefToGeodetic([entry.baseCenter.x, entry.baseCenter.y, entry.baseCenter.z]);
   if (Cesium.Cartesian3.magnitude(entry.baseCenter) < 1e5) {
@@ -193,6 +210,7 @@ function removeTileset(entry) {
   scene.primitives.remove(entry.tileset);
   if (entry.sourceId) unregisterSource(entry.sourceId);
   state.tilesets = state.tilesets.filter((t) => t !== entry);
+  rebalanceCache();
   renderLayers();
   updateHash();
   scheduleClamp();
@@ -274,7 +292,17 @@ async function openUrl(raw, { offset = 0, fly = true } = {}) {
 // ------------------------------------------------------------------ GeoJSON overlays
 const LABEL_KEYS = ['name', 'Name', 'sample_id', 'sample', 'Sample', 'id', 'ID', 'label', 'Label'];
 
-async function addGeoJson(obj, name) {
+/** Five-pointed star as an SVG data URL (fill colour, dark outline), for "marker-symbol": "star". */
+function starIcon(fill) {
+  const pts = Array.from({ length: 10 }, (_, i) => {
+    const r = i % 2 ? 6.5 : 15, a = Math.PI / 5 * i - Math.PI / 2;
+    return `${(16 + r * Math.cos(a)).toFixed(2)},${(16.5 + r * Math.sin(a)).toFixed(2)}`;
+  }).join(' ');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><polygon points="${pts}" fill="${fill}" stroke="#1e2321" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+
+async function addGeoJson(obj, name, { fly = true } = {}) {
   const ds = await Cesium.GeoJsonDataSource.load(obj, { markerColor: Cesium.Color.YELLOW, stroke: Cesium.Color.YELLOW, fill: Cesium.Color.YELLOW.withAlpha(0.25) });
   const clamp = $('#chk-clamp').checked;
   const toClamp = [];
@@ -290,17 +318,27 @@ async function addGeoJson(obj, name) {
     // A feature's own "marker-color" (simplestyle, e.g. colour by lithology) wins over the default yellow.
     let color = Cesium.Color.YELLOW;
     try { if (props['marker-color']) color = Cesium.Color.fromCssColorString(String(props['marker-color'])) || color; } catch (err) { /* keep yellow */ }
-    e.point = new Cesium.PointGraphics({
-      pixelSize: 10, color, outlineColor: Cesium.Color.BLACK, outlineWidth: 2,
-      disableDepthTestDistance: Number.POSITIVE_INFINITY,
-    });
+    // "marker-symbol": "star" (simplestyle) marks a single landmark, e.g. a type locality: a star that stays visible.
+    const star = String(props['marker-symbol'] || '').toLowerCase() === 'star';
+    if (star) {
+      e.billboard = new Cesium.BillboardGraphics({
+        image: starIcon(props['marker-color'] ? color.toCssColorString() : '#ffffff'), width: 30, height: 30,
+        verticalOrigin: Cesium.VerticalOrigin.CENTER, disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      });
+    } else {
+      e.point = new Cesium.PointGraphics({
+        pixelSize: 10, color, outlineColor: Cesium.Color.BLACK, outlineWidth: 2,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      });
+    }
     if (key) {
       e.label = new Cesium.LabelGraphics({
         text: String(props[key]), font: '13px sans-serif', fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK,
-        outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -16),
+        outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, star ? -24 : -16),
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        // names only within 500 m of the camera, so hundreds of points do not bury the model in text
-        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 500),
+        // names only within 500 m of the camera, so hundreds of points do not bury the model in text;
+        // a starred landmark keeps its name out to 5 km
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, star ? 5000 : 500),
       });
     }
   }
@@ -309,7 +347,7 @@ async function addGeoJson(obj, name) {
   state.overlays.push(overlay);
   renderLayers();
   await clampOverlay(overlay);
-  if (!state.tilesets.length) viewer.flyTo(ds, { duration: 1.2 });
+  if (fly && !state.tilesets.length) viewer.flyTo(ds, { duration: 1.2 });
   notify(`Overlay "${name}": ${ds.entities.values.length} features. Click a point to see its properties.`, 'ok', { timeout: 5000 });
   return overlay;
 }
@@ -349,6 +387,80 @@ async function openGeoJsonFile(file) {
   }
 }
 
+// ------------------------------------------------------------------ survey catalog ("Add survey" menu)
+// catalog.json next to index.html lists the models in the same deposit. The menu is shown only if the first
+// listed model can actually be reached from here (true on ERDA, where the viewer sits next to the deposit;
+// false on GitHub Pages or a local server without the data).
+const catalog = { surveys: [], overlays: [] };
+
+async function reachable(url) {
+  try {
+    const r = await fetch(url, { headers: { Range: 'bytes=0-0' }, cache: 'no-store' });
+    r.body?.cancel?.();
+    return r.ok;   // 200 or 206
+  } catch (e) {
+    return false;
+  }
+}
+
+async function initCatalog() {
+  let parsed;
+  try {
+    const r = await fetch('catalog.json', { cache: 'no-cache' });
+    if (!r.ok) return;
+    parsed = parseCatalog(await r.json());
+  } catch (e) {
+    return;
+  }
+  const first = parsed.surveys[0] || parsed.overlays[0];
+  if (!first || !(await reachable(resolveLink(first.url, location.href)))) return;
+  Object.assign(catalog, parsed);
+  renderCatalog();
+  $('#row-catalog').hidden = false;
+  // overlays marked "autoload" (e.g. the type locality) are shown without asking, without moving the camera
+  for (const o of catalog.overlays.filter((x) => x.autoload)) await loadCatalogOverlay(o, { fly: false });
+}
+
+async function loadCatalogOverlay(o, { fly = true } = {}) {
+  if (state.overlays.some((x) => x.name === o.name)) return;
+  try {
+    const r = await fetch(resolveLink(o.url, location.href));
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    await addGeoJson(await r.json(), o.name, { fly });
+  } catch (e) {
+    notify(`${o.name}: could not be loaded (${e.message})`, 'error');
+  }
+}
+
+function renderCatalog() {
+  const open = state.tilesets.map((t) => t.shareUrl);
+  const todo = notLoaded(catalog.surveys, open, location.href);
+  const opts = [el('option', { value: '' }, todo.length ? 'Add a survey…' : 'All surveys are loaded')];
+  if (todo.length > 1) opts.push(el('option', { value: 'all' }, `All surveys not yet loaded (${todo.length})`));
+  catalog.surveys.forEach((s, i) => { if (todo.includes(s)) opts.push(el('option', { value: `s${i}` }, s.name)); });
+  catalog.overlays.forEach((o, i) => opts.push(el('option', { value: `o${i}` }, `${o.name} (overlay)`)));
+  $('#sel-catalog').replaceChildren(...opts);
+}
+
+async function addFromCatalog(value) {
+  if (!value) return;
+  const btn = $('#btn-catalog');
+  btn.disabled = true;
+  try {
+    if (value === 'all') {
+      const todo = notLoaded(catalog.surveys, state.tilesets.map((t) => t.shareUrl), location.href);
+      for (const [k, s] of todo.entries()) await openUrl(s.url, { fly: k === todo.length - 1 });
+    } else if (value[0] === 's') {
+      await openUrl(catalog.surveys[Number(value.slice(1))].url);
+    } else {
+      await loadCatalogOverlay(catalog.overlays[Number(value.slice(1))]);
+    }
+  } finally {
+    btn.disabled = false;
+    renderCatalog();
+  }
+}
+
 // ------------------------------------------------------------------ layer list UI
 function el(tag, attrs = {}, ...children) {
   const n = document.createElement(tag);
@@ -364,6 +476,7 @@ function el(tag, attrs = {}, ...children) {
 const fmtOffset = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)} m`;
 
 function renderLayers() {
+  if (catalog.surveys.length) renderCatalog();
   const ul = $('#layer-list');
   ul.replaceChildren();
   if (!state.tilesets.length && !state.overlays.length) {
@@ -377,7 +490,7 @@ function renderLayers() {
     const apply = (v) => { setOffset(t, v); out.textContent = fmtOffset(t.offset); updateHash(); };
     range.addEventListener('input', () => { num.value = range.value; apply(range.value); });
     num.addEventListener('change', () => { range.value = num.value; apply(num.value); });
-    const vis = el('input', { type: 'checkbox', title: 'Show / hide', checked: t.tileset.show, onchange: (e) => { t.tileset.show = e.target.checked; if (!t.tileset.show) t.tileset.trimLoadedTiles(); scene.requestRender(); } });
+    const vis = el('input', { type: 'checkbox', title: 'Show / hide', checked: t.tileset.show, onchange: (e) => { t.tileset.show = e.target.checked; if (!t.tileset.show) t.tileset.trimLoadedTiles(); rebalanceCache(); } });
     ul.append(el('li', { class: 'layer', 'data-layer': t.id },
       el('div', { class: 'title' }, vis, el('span', { class: 'name' }, t.name),
         el('button', { type: 'button', title: 'Fly to', onclick: () => flyToSphere(focusSphere(t.tileset), 1.2) }, 'Fly to'),
@@ -789,6 +902,7 @@ function wire() {
     try { await openFolder(FolderProvider.fromFileList(files)); } catch (err) { notify(err.message, 'error'); }
   });
   $('#form-url').addEventListener('submit', (e) => { e.preventDefault(); openUrl($('#in-url').value.trim()); });
+  $('#btn-catalog').addEventListener('click', () => addFromCatalog($('#sel-catalog').value));
   $('#in-geojson').addEventListener('change', async (e) => {
     for (const f of [...e.target.files]) await openGeoJsonFile(f);
     e.target.value = '';
@@ -878,6 +992,7 @@ async function main() {
     if (state.sw.needsReload) msg.append(' ', el('button', { type: 'button', style: 'position:static', onclick: () => location.reload() }, 'Reload now'));
   }
   await applyHash();
+  if (state.sw.ok) await initCatalog();
   window.isua.ready = true;
 }
 

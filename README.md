@@ -11,8 +11,9 @@ Nothing to install and no account needed.
    piece by piece: nothing is uploaded, and multi-GB files are fine.
 3. Add more surveys the same way. They line up with each other (all in WGS 84 / UTM 22N, ITRF2020).
 
-The data are not in this repository. Contact Austin Jarl Boyd (GLOBE Institute, University of Copenhagen)
-for the model files until the dataset is published.
+The data are not in this repository. They are deposited at UCPH ERDA, where this viewer also runs next to the data and
+streams every survey directly: **https://erda.ku.dk/vgrid/IsuaUAV2025/** (the "Add survey" menu appears only there).
+The same page lists all files with checksums.
 
 ## What it can do
 
@@ -27,6 +28,7 @@ for the model files until the dataset is published.
 | **Strike/dip** | Click 3 or more points on a planar surface. A least-squares plane is fitted and reported as dip direction/dip and strike/dip (right-hand rule), with the RMS misfit, and drawn in 3D. |
 | **Export** | All measurements as CSV (opens in Excel) or GeoJSON (opens in QGIS). |
 | **GeoJSON overlay** | E.g. sample locations. Click a point to see its properties. Points without heights are placed on the model surface. |
+| **Add survey menu** | When the viewer runs next to the deposit (on ERDA), a menu adds any survey or the field observations without typing a link. The Rosing (1999) locality is shown as a star. |
 | **Screenshot** | PNG at 1×, 2× or 3× screen resolution, for figures. |
 | **Shareable link** | The address bar holds the camera position and the loaded *web* links. |
 

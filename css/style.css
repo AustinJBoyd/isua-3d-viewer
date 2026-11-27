@@ -132,6 +132,8 @@ table.nav-help th { text-align: left; font-size: 12px; color: var(--muted); padd
 table.nav-help td { font-size: 12.5px; }
 table.nav-help td:first-child { width: 46%; white-space: pre-wrap; }
 #sec-nav select { flex: 1; }
+#row-catalog select { flex: 1; min-width: 0; }
+#row-catalog[hidden] { display: none; }
 #sec-nav input[type="range"] { flex: 1; }
 #cesium canvas:focus { outline: none; }
 
